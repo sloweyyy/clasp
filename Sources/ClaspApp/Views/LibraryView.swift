@@ -6,7 +6,7 @@ struct LibraryView: View {
     @ObservedObject var model: AppModel
     @State private var selectedType: CaptureType = .task
     @State private var showingNewEntry = false
-    @State private var askCodexItem: NotionListItem?
+    @State private var askAgentItem: NotionListItem?
     @State private var deleteConfirmationItem: NotionListItem?
 
     var body: some View {
@@ -77,8 +77,8 @@ struct LibraryView: View {
         .sheet(isPresented: $showingNewEntry) {
             ManualEntryView(model: model, type: selectedType)
         }
-        .sheet(item: $askCodexItem) { item in
-            AskCodexView(model: model, item: item)
+        .sheet(item: $askAgentItem) { item in
+            AskAgentView(model: model, item: item)
         }
         .confirmationDialog(
             "Move this \(deleteConfirmationItem?.type.displayName.lowercased() ?? "entry") to Notion Trash?",
@@ -301,7 +301,7 @@ struct LibraryView: View {
             .width(min: 125, ideal: 160, max: 210)
 
             TableColumn("Codex") { item in
-                askCodexButton(for: item)
+                askAgentButton(for: item)
             }
             .width(min: 125, ideal: 140, max: 160)
 
@@ -469,31 +469,35 @@ struct LibraryView: View {
     }
 
     @ViewBuilder
-    private func askCodexButton(for item: NotionListItem) -> some View {
-        if let threadID = model.codexThreadID(for: item),
-           let destination = URL(string: "codex://threads/\(threadID)") {
-            Link(destination: destination) {
+    private func askAgentButton(for item: NotionListItem) -> some View {
+        if let conversation = model.agentConversation(for: item) {
+            Button {
+                model.openAgentConversation(conversation)
+            } label: {
                 Label("Open Conversation", systemImage: "bubble.left.and.bubble.right")
                     .lineLimit(1)
             }
-            .help("Open \(item.taskID) in Codex")
+            .buttonStyle(.link)
+            .help("Open \(item.taskID) in \(conversation.agent.displayName)")
             .accessibilityLabel(
-                "Open Codex conversation for \(displayTitle(for: item))"
+                "Open \(conversation.agent.displayName) conversation for \(displayTitle(for: item))"
             )
-        } else if model.askingCodexTaskIDs.contains(item.id) {
+        } else if model.askingAgentTaskIDs.contains(item.id) {
             ProgressView()
                 .controlSize(.small)
-                .accessibilityLabel("Starting Codex for \(displayTitle(for: item))")
+                .accessibilityLabel(
+                    "Starting \(model.codingAgent.displayName) for \(displayTitle(for: item))"
+                )
         } else {
             Button {
-                askCodexItem = item
+                askAgentItem = item
             } label: {
-                Label("Ask Codex", systemImage: "sparkles")
+                Label(model.codingAgent.askActionTitle, systemImage: "sparkles")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(ClaspBrand.accent)
-            .help("Create a Codex conversation for \(item.taskID)")
+            .help("Create a \(model.codingAgent.displayName) conversation for \(item.taskID)")
         }
     }
 
@@ -559,7 +563,7 @@ struct LibraryView: View {
     }
 }
 
-private struct AskCodexView: View {
+private struct AskAgentView: View {
     @ObservedObject var model: AppModel
     let item: NotionListItem
 
@@ -571,11 +575,15 @@ private struct AskCodexView: View {
     init(model: AppModel, item: NotionListItem) {
         self.model = model
         self.item = item
-        _selectedWorkspacePath = State(initialValue: model.codexWorkspacePath)
+        _selectedWorkspacePath = State(initialValue: model.agentWorkspacePath)
+    }
+
+    private var agentName: String {
+        model.codingAgent.displayName
     }
 
     private var isStarting: Bool {
-        model.askingCodexTaskIDs.contains(item.id)
+        model.askingAgentTaskIDs.contains(item.id)
     }
 
     private var taskTitle: String {
@@ -624,7 +632,7 @@ private struct AskCodexView: View {
             instructionFocused = true
         }
         .task {
-            await model.loadCodexProjects()
+            await model.loadAgentProjects()
         }
     }
 
@@ -633,9 +641,9 @@ private struct AskCodexView: View {
             ClaspLogoView(size: 42)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Ask Codex")
+                Text(model.codingAgent.askActionTitle)
                     .font(.title2.weight(.semibold))
-                Text("Turn this task into an active Codex conversation")
+                Text("Turn this task into an active \(agentName) conversation")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -718,7 +726,7 @@ private struct AskCodexView: View {
                     .focused($instructionFocused)
 
                 if instruction.isEmpty {
-                    Text("What would you like Codex to do?")
+                    Text("What would you like \(agentName) to do?")
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 13)
                         .padding(.vertical, 12)
@@ -745,23 +753,23 @@ private struct AskCodexView: View {
     private var workspaceDisclosure: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Label("Codex project", systemImage: "folder")
+                Label("\(agentName) project", systemImage: "folder")
                     .font(.headline)
                 Spacer()
-                if model.isLoadingCodexProjects {
+                if model.isLoadingAgentProjects {
                     ProgressView()
                         .controlSize(.small)
-                        .accessibilityLabel("Loading Codex projects")
+                        .accessibilityLabel("Loading \(agentName) projects")
                 }
             }
 
             HStack(spacing: 10) {
-                Picker("Codex project", selection: $selectedWorkspacePath) {
-                    ForEach(model.codexProjects) { project in
+                Picker("\(agentName) project", selection: $selectedWorkspacePath) {
+                    ForEach(model.agentProjects) { project in
                         Text(project.name)
                             .tag(project.path)
                     }
-                    if !model.codexProjects.contains(where: {
+                    if !model.agentProjects.contains(where: {
                         $0.path == selectedWorkspacePath
                     }) {
                         Text(workspaceName)
@@ -784,7 +792,7 @@ private struct AskCodexView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
 
-            Text("Projects are discovered from existing Codex conversations. Choose any other folder when it has not appeared in Codex yet.")
+            Text("Projects are discovered from existing \(agentName) conversations. Choose any other folder when it has not appeared in \(agentName) yet.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -795,7 +803,7 @@ private struct AskCodexView: View {
 
     private func chooseWorkspaceFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Choose Codex Project"
+        panel.title = "Choose \(agentName) Project"
         panel.prompt = "Choose Project"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -806,12 +814,12 @@ private struct AskCodexView: View {
         )
         guard panel.runModal() == .OK, let url = panel.url else { return }
         selectedWorkspacePath = url.standardizedFileURL.path
-        model.includeCodexProject(path: selectedWorkspacePath)
+        model.includeAgentProject(path: selectedWorkspacePath)
     }
 
     private var actionFooter: some View {
         HStack(spacing: 12) {
-            Text("Codex opens when the task is ready for you.")
+            Text("\(agentName) opens when the task is ready for you.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -830,7 +838,7 @@ private struct AskCodexView: View {
 
             Button {
                 Task {
-                    if await model.askCodex(
+                    if await model.askAgent(
                         item,
                         instruction: instruction,
                         workspacePath: selectedWorkspacePath
@@ -839,7 +847,7 @@ private struct AskCodexView: View {
                     }
                 }
             } label: {
-                Label("Start in Codex", systemImage: "sparkles")
+                Label("Start in \(agentName)", systemImage: "sparkles")
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.return, modifiers: .command)

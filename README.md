@@ -45,19 +45,19 @@ The Source remains editable when an application cannot expose its exact location
 - Delete a Task from Clasp with confirmation when it should be moved to Notion Trash.
 - Preserve confirmed captures locally before delivery and retain failed deliveries for retry.
 
-#### Start a Codex session in seconds
+#### Hand a Task to Claude Code or Codex in seconds
 
-Every Task has an **Ask Codex** action. Click it to open a focused handoff dialog, add an optional
-instruction, choose the local Codex project where the work belongs, and select **Start in Codex**.
-Clasp sends the Task name, Notes, Priority, Due Date, Source, and a direct link to its Notion page
-as the conversation context.
+Every Task has an **Ask Claude** or **Ask Codex** action, depending on the coding agent selected
+in Settings. Click it to open a focused handoff dialog, add an optional instruction, choose the
+local project where the work belongs, and start the session. Clasp sends the Task name, Notes,
+Priority, Due Date, Source, and a direct link to its Notion page as the conversation context.
 
 ![Starting a Codex session from a Clasp Task](docs/images/features/ask-codex.jpg)
 
-Clasp immediately creates a persistent Codex conversation named with the Task's stable
-`CLASP-XXXXXXXX` ID and replaces **Ask Codex** with **Open Conversation**. The Task remains linked
-to its Codex conversation, while Clasp synchronizes Working, Waiting, Completed, or Failed
-Progress back to Notion. Completing the Codex work does not check the separate Done checkbox
+Clasp immediately creates a persistent conversation tagged with the Task's stable
+`CLASP-XXXXXXXX` ID and replaces the ask action with **Open Conversation**. The Task remains
+linked to its conversation, while Clasp synchronizes Working, Waiting, Completed, or Failed
+Progress back to Notion. Completing the agent's work does not check the separate Done checkbox
 unless you explicitly request it.
 
 ### Bookmark Management
@@ -84,6 +84,9 @@ unless you explicitly request it.
 
 ![Notion synchronization and Codex task controls in Clasp](docs/images/features/integrations.jpg)
 
+Clasp hands Tasks to your preferred coding agent—Claude Code or Codex—selected in Settings.
+Claude Code is the default when its CLI is installed.
+
 #### Notion
 
 - Create and validate dedicated `Clasp Tasks` and `Clasp Bookmarks` databases under a shared
@@ -92,6 +95,20 @@ unless you explicitly request it.
 - Store the Notion integration token only in macOS Keychain.
 - Route every entry to its type-specific database without sending analytics or captured content
   elsewhere.
+
+#### Claude Code
+
+- Hand a Task to a persistent Claude Code session with an optional instruction.
+- Run the locally installed `claude` CLI headlessly in the selected project folder, so the
+  session inherits that project's `CLAUDE.md`, skills, and configuration.
+- Choose from project folders discovered from previous Claude Code sessions, with a configurable
+  default.
+- Pick the autonomy level in Settings: apply file edits only (default), or also run commands
+  without asking in projects you trust.
+- **Open Conversation** opens Terminal and resumes the exact session with `claude --resume`,
+  in the same project folder.
+- Include the stable Clasp Task ID and a link to the Notion Task in the conversation, and mirror
+  the session's lifecycle Progress to Notion without automatically checking Done.
 
 #### Codex
 
@@ -108,6 +125,8 @@ unless you explicitly request it.
 - Swift 6 for command-line builds and tests.
 - Full Xcode for creating a stable `.app`, signing, notarization, UI tests, and release builds.
 - A Notion internal integration with Read content, Insert content, and Update content capabilities.
+- Optional: the [Claude Code](https://claude.com/claude-code) CLI for **Ask Claude**, or the
+  Codex desktop app for **Ask Codex**.
 
 The Accessibility-based build is intended for direct Developer ID distribution and does not
 enable App Sandbox. A sandboxed Mac App Store build cannot provide equivalent arbitrary-app
@@ -167,9 +186,10 @@ Create an ad-hoc-signed local application bundle:
 open dist/Clasp.app
 ```
 
-To provide a local default for the Ask Codex project picker, copy `.env.example` to `.env` and
-set `CLASP_DEFAULT_CODEX_WORKSPACE_PATH`. The ignored `.env` is loaded by the packaging script;
-its value is embedded only in that local app bundle. Release builds should omit this setting.
+To provide a local default for the Ask Claude / Ask Codex project picker, copy `.env.example` to
+`.env` and set `CLASP_DEFAULT_CODEX_WORKSPACE_PATH`. The ignored `.env` is loaded by the packaging
+script; its value is embedded only in that local app bundle. Release builds should omit this
+setting.
 
 On the first launch, Clasp opens its setup window. After setup, it remains in the menu bar and
 opens in **Medium** mode by default. Use the menu-bar **Window Mode** menu to switch among Mini

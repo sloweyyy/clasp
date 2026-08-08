@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CodexProjectOption: Identifiable, Equatable, Hashable, Sendable {
+public struct AgentProjectOption: Identifiable, Equatable, Hashable, Sendable {
     public let path: String
 
     public var id: String { path }
@@ -14,11 +14,11 @@ public struct CodexProjectOption: Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
-public enum CodexProjectCatalog {
+public enum AgentProjectCatalog {
     public static func options(
         defaultPath: String,
         discoveredPaths: [String]
-    ) -> [CodexProjectOption] {
+    ) -> [AgentProjectOption] {
         let normalizedDefault = normalize(defaultPath)
         var seen = Set<String>()
         var paths: [String] = []
@@ -48,7 +48,7 @@ public enum CodexProjectCatalog {
                 if nameOrder == .orderedSame { return left < right }
                 return nameOrder == .orderedAscending
             }
-            .map(CodexProjectOption.init(path:))
+            .map(AgentProjectOption.init(path:))
     }
 
     private static func normalize(_ path: String) -> String {

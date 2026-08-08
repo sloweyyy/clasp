@@ -1,6 +1,6 @@
 import Foundation
 
-public enum CodexTaskOutcome: String, CaseIterable, Sendable {
+public enum AgentTaskOutcome: String, CaseIterable, Sendable {
     case completed = "COMPLETED"
     case waiting = "WAITING"
     case failed = "FAILED"
@@ -23,7 +23,7 @@ public enum CodexTaskOutcome: String, CaseIterable, Sendable {
     }
 }
 
-public enum CodexTaskHandoff {
+public enum AgentTaskHandoff {
     public static func prompt(
         for item: NotionListItem,
         instruction: String
@@ -53,12 +53,12 @@ public enum CodexTaskHandoff {
         Work on this task. Ask for clarification when required.
 
         Task lifecycle rules for Clasp:
-        - Completing a response or Codex turn does not by itself complete the task.
+        - Completing a response or agent turn does not by itself complete the task.
         - Do not change the Notion Done checkbox unless the user explicitly asks you to mark the task done.
         - End every final response with exactly one hidden status marker:
-          \(CodexTaskOutcome.completed.marker) only when all requested work is genuinely finished.
-          \(CodexTaskOutcome.waiting.marker) when work remains or you need user input, approval, or clarification.
-          \(CodexTaskOutcome.failed.marker) only when the task cannot be completed because of an unrecoverable failure.
+          \(AgentTaskOutcome.completed.marker) only when all requested work is genuinely finished.
+          \(AgentTaskOutcome.waiting.marker) when work remains or you need user input, approval, or clarification.
+          \(AgentTaskOutcome.failed.marker) only when the task cannot be completed because of an unrecoverable failure.
         """)
         return sections.joined(separator: "\n")
     }

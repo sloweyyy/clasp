@@ -2,8 +2,8 @@ import ClaspCore
 import Foundation
 import Testing
 
-@Suite("Codex project catalog")
-struct CodexProjectTests {
+@Suite("Agent project catalog")
+struct AgentProjectTests {
     @Test("Keeps the default first and deduplicates discovered project folders")
     func buildsProjectOptions() throws {
         let root = FileManager.default.temporaryDirectory
@@ -23,7 +23,7 @@ struct CodexProjectTests {
         )
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let options = CodexProjectCatalog.options(
+        let options = AgentProjectCatalog.options(
             defaultPath: defaultProject.path,
             discoveredPaths: [
                 anotherProject.path,

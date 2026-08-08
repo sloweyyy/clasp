@@ -14,7 +14,7 @@ struct SettingsView: View {
 
     @State private var token = ""
     @State private var parentPageID = ""
-    @State private var codexWorkspacePath = ""
+    @State private var agentWorkspacePath = ""
     @State private var showingRemoveConfirmation = false
 
     var body: some View {
@@ -37,7 +37,7 @@ struct SettingsView: View {
                     .padding(.bottom, 2)
 
                     notionSection
-                    codexSection
+                    agentSection
                     permissionSection
                     shortcutSection
 
@@ -56,7 +56,7 @@ struct SettingsView: View {
                 await model.refreshCredentialState()
             }
             parentPageID = model.destinations?.parentPageID ?? parentPageID
-            codexWorkspacePath = model.codexWorkspacePath
+            agentWorkspacePath = model.agentWorkspacePath
         }
         .confirmationDialog(
             "Remove the Notion connection?",
@@ -72,29 +72,72 @@ struct SettingsView: View {
         }
     }
 
-    private var codexSection: some View {
+    private var agentSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             ClaspSectionHeading(
-                "Codex workspace",
+                "Coding agent",
                 icon: "sparkles",
-                subtitle: "Choose where new Ask Codex conversations run"
+                subtitle: "Choose which agent picks up your tasks"
             )
 
-            TextField("Codex workspace folder", text: $codexWorkspacePath)
+            Picker("Coding agent", selection: Binding(
+                get: { model.codingAgent },
+                set: { model.setCodingAgent($0) }
+            )) {
+                ForEach(CodingAgent.allCases) { agent in
+                    Text(agent.displayName).tag(agent)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if model.codingAgent == .claudeCode {
+                if let cliPath = ClaudeCodeCLI.executableURL()?.path {
+                    Text("Claude Code CLI: \(cliPath)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("The Claude Code CLI was not found. Install it and run claude once in Terminal to sign in.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Picker("Autonomy", selection: Binding(
+                    get: { model.claudePermissionMode },
+                    set: { model.setClaudePermissionMode($0) }
+                )) {
+                    ForEach(ClaudeCodePermissionMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .frame(maxWidth: 320, alignment: .leading)
+
+                Text(model.claudePermissionMode.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            TextField("Workspace folder", text: $agentWorkspacePath)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.large)
-                .accessibilityLabel("Codex workspace folder")
+                .accessibilityLabel("Agent workspace folder")
 
             HStack {
                 Button {
-                    chooseCodexWorkspaceFolder()
+                    chooseAgentWorkspaceFolder()
                 } label: {
                     Label("Choose Folder…", systemImage: "folder")
                 }
                 Spacer()
                 Button("Save Workspace") {
-                    if model.saveCodexWorkspacePath(codexWorkspacePath) {
-                        codexWorkspacePath = model.codexWorkspacePath
+                    if model.saveAgentWorkspacePath(agentWorkspacePath) {
+                        agentWorkspacePath = model.agentWorkspacePath
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -102,7 +145,7 @@ struct SettingsView: View {
             }
 
             Text(
-                "New Ask Codex conversations run in this folder and inherit its project instructions, skills, and configuration."
+                "New \(model.codingAgent.displayName) conversations run in this folder by default and inherit its project instructions, skills, and configuration."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -110,23 +153,23 @@ struct SettingsView: View {
         .claspCard()
     }
 
-    private func chooseCodexWorkspaceFolder() {
+    private func chooseAgentWorkspaceFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Choose Codex Workspace"
+        panel.title = "Choose Workspace"
         panel.prompt = "Choose"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        if !codexWorkspacePath.isEmpty {
+        if !agentWorkspacePath.isEmpty {
             panel.directoryURL = URL(
-                fileURLWithPath: codexWorkspacePath,
+                fileURLWithPath: agentWorkspacePath,
                 isDirectory: true
             )
         }
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        codexWorkspacePath = url.path
-        if model.saveCodexWorkspacePath(url.path) {
-            codexWorkspacePath = model.codexWorkspacePath
+        agentWorkspacePath = url.path
+        if model.saveAgentWorkspacePath(url.path) {
+            agentWorkspacePath = model.agentWorkspacePath
         }
     }
 

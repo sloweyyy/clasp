@@ -51,7 +51,7 @@ final class CodexTaskCoordinator {
         var nextRequestID = 1
         var pending: [Int: CheckedContinuation<Data, Error>] = [:]
         var reachedTerminalState = false
-        var declaredOutcome: CodexTaskOutcome?
+        var declaredOutcome: AgentTaskOutcome?
         let reportsProgress: Bool
 
         init(
@@ -149,7 +149,7 @@ final class CodexTaskCoordinator {
                     "threadId": threadID,
                     "input": [[
                         "type": "text",
-                        "text": CodexTaskHandoff.prompt(
+                        "text": AgentTaskHandoff.prompt(
                             for: item,
                             instruction: instruction
                         )
@@ -169,9 +169,9 @@ final class CodexTaskCoordinator {
         }
     }
 
-    func availableProjects(defaultPath: String) async -> [CodexProjectOption] {
+    func availableProjects(defaultPath: String) async -> [AgentProjectOption] {
         let discoveredPaths = (try? await discoverThreadProjectPaths()) ?? []
-        return CodexProjectCatalog.options(
+        return AgentProjectCatalog.options(
             defaultPath: defaultPath,
             discoveredPaths: discoveredPaths
         )
@@ -365,7 +365,7 @@ final class CodexTaskCoordinator {
             else {
                 return
             }
-            session.declaredOutcome = CodexTaskOutcome.declared(in: text)
+            session.declaredOutcome = AgentTaskOutcome.declared(in: text)
         case "thread/status/changed":
             guard let status = params["status"] as? [String: Any],
                   status["type"] as? String == "active",

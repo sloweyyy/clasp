@@ -2,6 +2,18 @@ import AppKit
 import ClaspCore
 import Foundation
 
+enum AgentConversation {
+    case claudeCode(ClaudeCodeSessionReference)
+    case codex(threadID: String)
+
+    var agent: CodingAgent {
+        switch self {
+        case .claudeCode: .claudeCode
+        case .codex: .codex
+        }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var presentationMode: ClaspPresentationMode
@@ -15,12 +27,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var completingItemIDs: Set<String> = []
     @Published private(set) var deletingItemIDs: Set<String> = []
     @Published private(set) var updatingTaskFieldKeys: Set<String> = []
-    @Published private(set) var askingCodexTaskIDs: Set<String> = []
-    @Published private(set) var codexProjects: [CodexProjectOption]
-    @Published private(set) var isLoadingCodexProjects = false
+    @Published private(set) var askingAgentTaskIDs: Set<String> = []
+    @Published private(set) var agentProjects: [AgentProjectOption]
+    @Published private(set) var isLoadingAgentProjects = false
+    @Published private(set) var codingAgent: CodingAgent
+    @Published private(set) var claudePermissionMode: ClaudeCodePermissionMode
     @Published var statusMessage: String?
     @Published var shortcut: GlobalShortcut
-    @Published private(set) var codexWorkspacePath: String
+    @Published private(set) var agentWorkspacePath: String
     @Published private(set) var accessibilityGranted = AccessibilitySelectionReader.hasPermission
 
     private let repository: any CaptureRepository
@@ -31,11 +45,27 @@ final class AppModel: ObservableObject {
     private let hotKeyManager: GlobalHotKeyManager
     private lazy var codexTaskCoordinator = CodexTaskCoordinator(
         onProgress: { [weak self] pageID, progress in
-            await self?.receiveCodexProgress(pageID: pageID, progress: progress)
+            await self?.receiveAgentProgress(
+                agent: .codex,
+                pageID: pageID,
+                progress: progress
+            )
         },
         onThreadReleased: { threadID in
             guard let url = URL(string: "codex://threads/\(threadID)") else { return }
             NSWorkspace.shared.open(url)
+        }
+    )
+    private lazy var claudeTaskCoordinator = ClaudeCodeTaskCoordinator(
+        onProgress: { [weak self] pageID, progress in
+            await self?.receiveAgentProgress(
+                agent: .claudeCode,
+                pageID: pageID,
+                progress: progress
+            )
+        },
+        onSessionReleased: { reference in
+            ClaudeCodeConversationOpener.open(reference)
         }
     )
 
@@ -55,12 +85,14 @@ final class AppModel: ObservableObject {
         self.hotKeyManager = hotKeyManager
         self.presentationMode = ClaspPresentationMode.saved()
         self.shortcut = hotKeyManager.savedShortcut()
-        let savedWorkspacePath = Self.savedCodexWorkspacePath()
-        self.codexWorkspacePath = savedWorkspacePath
-        self.codexProjects = CodexProjectCatalog.options(
+        let savedWorkspacePath = Self.savedAgentWorkspacePath()
+        self.agentWorkspacePath = savedWorkspacePath
+        self.agentProjects = AgentProjectCatalog.options(
             defaultPath: savedWorkspacePath,
             discoveredPaths: []
         )
+        self.codingAgent = Self.savedCodingAgent()
+        self.claudePermissionMode = Self.savedClaudePermissionMode()
     }
 
     func setPresentationMode(_ mode: ClaspPresentationMode) {
@@ -259,26 +291,37 @@ final class AppModel: ObservableObject {
         updatingTaskFieldKeys.contains(taskFieldKey(item.id, field))
     }
 
-    func askCodex(
+    func askAgent(
         _ item: NotionListItem,
         instruction: String,
         workspacePath: String
     ) async -> Bool {
         guard item.type == .task,
-              askingCodexTaskIDs.insert(item.id).inserted
+              askingAgentTaskIDs.insert(item.id).inserted
         else {
             return false
         }
-        defer { askingCodexTaskIDs.remove(item.id) }
+        defer { askingAgentTaskIDs.remove(item.id) }
 
+        let agent = codingAgent
         do {
             try await applyTaskProgress(pageID: item.id, progress: .working)
-            _ = try await codexTaskCoordinator.start(
-                item: item,
-                instruction: instruction,
-                workspacePath: workspacePath
-            )
-            statusMessage = "Codex conversation created for \(item.taskID)."
+            switch agent {
+            case .claudeCode:
+                _ = try await claudeTaskCoordinator.start(
+                    item: item,
+                    instruction: instruction,
+                    workspacePath: workspacePath,
+                    permissionMode: claudePermissionMode
+                )
+            case .codex:
+                _ = try await codexTaskCoordinator.start(
+                    item: item,
+                    instruction: instruction,
+                    workspacePath: workspacePath
+                )
+            }
+            statusMessage = "\(agent.displayName) conversation created for \(item.taskID)."
             return true
         } catch {
             try? await applyTaskProgress(pageID: item.id, progress: .failed)
@@ -287,29 +330,73 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func codexThreadID(for item: NotionListItem) -> String? {
+    func agentConversation(for item: NotionListItem) -> AgentConversation? {
         guard item.type == .task else { return nil }
-        return codexTaskCoordinator.savedThreadID(for: item.id)
+        let claude = claudeTaskCoordinator.savedSession(for: item.id)
+            .map(AgentConversation.claudeCode)
+        let codex = codexTaskCoordinator.savedThreadID(for: item.id)
+            .map { AgentConversation.codex(threadID: $0) }
+        switch codingAgent {
+        case .claudeCode: return claude ?? codex
+        case .codex: return codex ?? claude
+        }
     }
 
-    func loadCodexProjects() async {
-        guard !isLoadingCodexProjects else { return }
-        isLoadingCodexProjects = true
-        codexProjects = await codexTaskCoordinator.availableProjects(
-            defaultPath: codexWorkspacePath
+    func openAgentConversation(_ conversation: AgentConversation) {
+        switch conversation {
+        case let .claudeCode(reference):
+            if !ClaudeCodeConversationOpener.open(reference) {
+                statusMessage = "Install the Claude Code CLI to open this conversation."
+            }
+        case let .codex(threadID):
+            guard let url = URL(string: "codex://threads/\(threadID)") else { return }
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func setCodingAgent(_ agent: CodingAgent) {
+        guard agent != codingAgent else { return }
+        codingAgent = agent
+        UserDefaults.standard.set(agent.rawValue, forKey: "clasp.codingAgent")
+        agentProjects = AgentProjectCatalog.options(
+            defaultPath: agentWorkspacePath,
+            discoveredPaths: []
         )
-        isLoadingCodexProjects = false
+        Task { [weak self] in
+            await self?.loadAgentProjects()
+        }
     }
 
-    func includeCodexProject(path: String) {
-        codexProjects = CodexProjectCatalog.options(
-            defaultPath: codexWorkspacePath,
-            discoveredPaths: codexProjects.map(\.path) + [path]
+    func setClaudePermissionMode(_ mode: ClaudeCodePermissionMode) {
+        claudePermissionMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "clasp.claudePermissionMode")
+    }
+
+    func loadAgentProjects() async {
+        guard !isLoadingAgentProjects else { return }
+        isLoadingAgentProjects = true
+        switch codingAgent {
+        case .claudeCode:
+            agentProjects = await claudeTaskCoordinator.availableProjects(
+                defaultPath: agentWorkspacePath
+            )
+        case .codex:
+            agentProjects = await codexTaskCoordinator.availableProjects(
+                defaultPath: agentWorkspacePath
+            )
+        }
+        isLoadingAgentProjects = false
+    }
+
+    func includeAgentProject(path: String) {
+        agentProjects = AgentProjectCatalog.options(
+            defaultPath: agentWorkspacePath,
+            discoveredPaths: agentProjects.map(\.path) + [path]
         )
     }
 
     @discardableResult
-    func saveCodexWorkspacePath(_ path: String) -> Bool {
+    func saveAgentWorkspacePath(_ path: String) -> Bool {
         let normalized = NSString(
             string: path.trimmingCharacters(in: .whitespacesAndNewlines)
         ).expandingTildeInPath
@@ -320,26 +407,27 @@ final class AppModel: ObservableObject {
             atPath: url.path,
             isDirectory: &isDirectory
         ), isDirectory.boolValue else {
-            statusMessage = "Choose an existing folder for the Codex workspace."
+            statusMessage = "Choose an existing folder for the agent workspace."
             return false
         }
-        codexWorkspacePath = url.path
+        agentWorkspacePath = url.path
         UserDefaults.standard.set(url.path, forKey: "clasp.codexWorkspacePath")
-        codexProjects = CodexProjectCatalog.options(
+        agentProjects = AgentProjectCatalog.options(
             defaultPath: url.path,
-            discoveredPaths: codexProjects.map(\.path)
+            discoveredPaths: agentProjects.map(\.path)
         )
-        statusMessage = "Codex workspace updated."
+        statusMessage = "Workspace updated."
         return true
     }
 
-    private func receiveCodexProgress(
+    private func receiveAgentProgress(
+        agent: CodingAgent,
         pageID: String,
         progress: TaskProgress
     ) async {
         do {
             try await applyTaskProgress(pageID: pageID, progress: progress)
-            statusMessage = "Codex progress: \(progress.displayName)."
+            statusMessage = "\(agent.displayName) progress: \(progress.displayName)."
         } catch {
             statusMessage = safeMessage(for: error)
         }
@@ -370,7 +458,24 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private static func savedCodexWorkspacePath() -> String {
+    private static func savedCodingAgent() -> CodingAgent {
+        if let raw = UserDefaults.standard.string(forKey: "clasp.codingAgent"),
+           let agent = CodingAgent(rawValue: raw) {
+            return agent
+        }
+        return ClaudeCodeCLI.isInstalled ? .claudeCode : .codex
+    }
+
+    private static func savedClaudePermissionMode() -> ClaudeCodePermissionMode {
+        if let raw = UserDefaults.standard.string(
+            forKey: "clasp.claudePermissionMode"
+        ), let mode = ClaudeCodePermissionMode(rawValue: raw) {
+            return mode
+        }
+        return .acceptEdits
+    }
+
+    private static func savedAgentWorkspacePath() -> String {
         if let saved = UserDefaults.standard.string(
             forKey: "clasp.codexWorkspacePath"
         ), !saved.isEmpty {
