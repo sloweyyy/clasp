@@ -46,6 +46,13 @@ final class ClaspAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var capturePanel = CapturePanelCoordinator(model: appModel)
     private lazy var settingsWindow = SettingsWindowCoordinator(model: appModel)
     private lazy var mainWindow = MainWindowCoordinator(model: appModel)
+    private lazy var statusItemController = StatusItemController(
+        model: appModel,
+        onCapture: { [weak self] in self?.beginCapture() },
+        onOpenMain: { [weak self] in self?.openFromStatusItem() },
+        onPresentationMode: { [weak self] in self?.applyPresentationMode($0) },
+        onSettings: { [weak self] in self?.showSettings() }
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let lock = SingleInstanceLock.acquire() else {
@@ -55,6 +62,7 @@ final class ClaspAppDelegate: NSObject, NSApplicationDelegate {
         }
         instanceLock = lock
         setActivationPolicy(for: appModel.presentationMode)
+        statusItemController.install()
         logger.info("Clasp started")
         hotKeyManager.onPressed = { [weak self] in
             DispatchQueue.main.async {
@@ -115,6 +123,14 @@ final class ClaspAppDelegate: NSObject, NSApplicationDelegate {
         mainWindow.show(mode: appModel.presentationMode == .maximum ? .maximum : .medium)
     }
 
+    func openFromStatusItem() {
+        if appModel.destinations == nil {
+            showSettings()
+        } else {
+            showMain()
+        }
+    }
+
     func applyPresentationMode(_ mode: ClaspPresentationMode) {
         appModel.setPresentationMode(mode)
         setActivationPolicy(for: mode)
@@ -162,21 +178,12 @@ struct ClaspApplication: App {
     @NSApplicationDelegateAdaptor private var appDelegate: ClaspAppDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            ClaspMenuView(
-                model: appDelegate.appModel,
-                onCapture: appDelegate.beginCapture,
-                onOpenMain: appDelegate.showMain,
-                onPresentationMode: appDelegate.applyPresentationMode,
-                onSettings: appDelegate.showSettings
-            )
-        } label: {
-            Label {
-                Text("Clasp")
-            } icon: {
-                ClaspMenuBarIcon()
-            }
-            .accessibilityLabel("Clasp")
+        // The status item is managed by StatusItemController so a left click
+        // can open the Clasp window while a right click shows the menu;
+        // SwiftUI's MenuBarExtra cannot distinguish the two, so it stays
+        // uninserted purely to preserve the scene structure.
+        MenuBarExtra("Clasp", isInserted: .constant(false)) {
+            EmptyView()
         }
 
         Window("Recent Captures", id: "recent-captures") {
@@ -194,55 +201,3 @@ struct ClaspApplication: App {
     }
 }
 
-private struct ClaspMenuView: View {
-    @ObservedObject var model: AppModel
-    let onCapture: () -> Void
-    let onOpenMain: () -> Void
-    let onPresentationMode: (ClaspPresentationMode) -> Void
-    let onSettings: () -> Void
-
-    var body: some View {
-        Button("Capture Selection") {
-            onCapture()
-        }
-        .keyboardShortcut("c")
-
-        Button("Open Clasp") {
-            onOpenMain()
-        }
-        .keyboardShortcut("o")
-
-        Divider()
-        Text("Window Mode")
-        ForEach(ClaspPresentationMode.allCases) { mode in
-            Button {
-                onPresentationMode(mode)
-            } label: {
-                Label {
-                    Text("\(mode.title) — \(mode.helpText)")
-                } icon: {
-                    Image(systemName: model.presentationMode == mode ? "checkmark.circle.fill" : "circle")
-                }
-            }
-        }
-
-        let pendingCount = model.captures.filter {
-            $0.delivery == .pending || $0.delivery == .failed
-        }.count
-        if pendingCount > 0 {
-            Text("\(pendingCount) capture\(pendingCount == 1 ? "" : "s") need attention")
-                .foregroundStyle(.secondary)
-        }
-
-        Divider()
-        Button("Settings…") {
-            onSettings()
-        }
-        .keyboardShortcut(",")
-        Divider()
-        Button("Quit Clasp") {
-            NSApp.terminate(nil)
-        }
-        .keyboardShortcut("q")
-    }
-}

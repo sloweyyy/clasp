@@ -93,17 +93,6 @@ struct ClaspLogoView: View {
     }
 }
 
-struct ClaspMenuBarIcon: View {
-    var body: some View {
-        Image(nsImage: ClaspBrand.menuBarIcon)
-            .renderingMode(.template)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: 18, height: 18)
-            .accessibilityLabel("Clasp")
-    }
-}
-
 struct ClaspBrandHeader: View {
     let subtitle: String
     var logoSize: CGFloat = 38
