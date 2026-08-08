@@ -52,4 +52,54 @@ struct ClaudeCodeSessionIndexTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         #expect(ClaudeCodeSessionIndex.discoverProjectPaths(projectsRoot: missing).isEmpty)
     }
+
+    @Test("Reconciles unwatched sessions from the transcript's last assistant message")
+    func reconcilesProgressFromTranscript() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("-Users-a-project", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: project,
+            withIntermediateDirectories: true
+        )
+
+        func assistantLine(_ text: String) -> String {
+            """
+            {"type":"assistant","message":{"content":[{"type":"text","text":"\(text)"}]}}
+            """
+        }
+
+        let marker = AgentTaskOutcome.completed.marker
+        try [
+            "{\"type\":\"user\",\"cwd\":\"/Users/a/project\"}",
+            assistantLine("Working on it."),
+            assistantLine("All done.\\n\(marker)")
+        ].joined(separator: "\n").write(
+            to: project.appendingPathComponent("done-session.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try [
+            "{\"type\":\"user\",\"cwd\":\"/Users/a/project\"}",
+            assistantLine("Still thinking about the approach.")
+        ].joined(separator: "\n").write(
+            to: project.appendingPathComponent("open-session.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        #expect(ClaudeCodeSessionIndex.reconciledProgress(
+            sessionID: "done-session",
+            projectsRoot: root
+        ) == .completed)
+        #expect(ClaudeCodeSessionIndex.reconciledProgress(
+            sessionID: "open-session",
+            projectsRoot: root
+        ) == .waiting)
+        #expect(ClaudeCodeSessionIndex.reconciledProgress(
+            sessionID: "missing-session",
+            projectsRoot: root
+        ) == .failed)
+    }
 }

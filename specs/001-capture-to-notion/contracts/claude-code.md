@@ -75,6 +75,14 @@ with the `WAITING` marker so the user continues interactively through `Open Conv
 `bypassPermissions` autonomy also runs commands without asking and is offered only as an
 explicit Settings choice for trusted projects.
 
+If Clasp exits while a run is active, the run continues as an orphaned process and keeps
+appending to its stored transcript, but nobody observes its result event. On every library
+load, Clasp therefore reconciles Tasks left on Working or Waiting whose session has no live
+worker: the last assistant message in the stored transcript decides the Progress using the same
+marker rules, a transcript without a marker stays Waiting, and a session with no stored
+transcript becomes Failed. This also picks up markers declared later, when the user continues
+the conversation interactively through Open Conversation.
+
 Every remote Progress update is confirmed before the main-table projection changes. The Notion
 integration token is never passed to Claude Code or written to the conversation.
 

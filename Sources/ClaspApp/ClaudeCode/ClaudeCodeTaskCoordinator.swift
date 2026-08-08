@@ -156,6 +156,11 @@ final class ClaudeCodeTaskCoordinator {
         )
     }
 
+    func isSessionActive(for pageID: String) -> Bool {
+        guard let reference = savedSession(for: pageID) else { return false }
+        return sessionsByID[reference.sessionID] != nil
+    }
+
     func savedSession(for pageID: String) -> ClaudeCodeSessionReference? {
         guard let entry = associations()[pageID],
               let sessionID = entry["sessionID"],

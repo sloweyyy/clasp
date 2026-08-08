@@ -162,6 +162,7 @@ final class AppModel: ObservableObject {
             notionBookmarks = result.bookmarks
             hasToken = true
             statusMessage = nil
+            await reconcileClaudeProgress()
         } catch {
             if let claspError = error as? ClaspError {
                 switch claspError {
@@ -418,6 +419,32 @@ final class AppModel: ObservableObject {
         )
         statusMessage = "Workspace updated."
         return true
+    }
+
+    /// Tasks left on Working or Waiting by a Clasp exit mid-run are settled
+    /// from the session transcript Claude Code keeps on disk. This also picks
+    /// up markers declared later, when the user continues the conversation
+    /// interactively through Open Conversation.
+    private func reconcileClaudeProgress() async {
+        for item in notionTasks where item.type == .task
+            && (item.progress == .working || item.progress == .waiting) {
+            guard let reference = claudeTaskCoordinator.savedSession(for: item.id),
+                  !claudeTaskCoordinator.isSessionActive(for: item.id)
+            else {
+                continue
+            }
+            let sessionID = reference.sessionID
+            let progress = await Task.detached(priority: .utility) {
+                ClaudeCodeSessionIndex.reconciledProgress(sessionID: sessionID)
+            }.value
+            guard progress != item.progress else { continue }
+            do {
+                try await applyTaskProgress(pageID: item.id, progress: progress)
+                statusMessage = "Claude Code progress: \(progress.displayName)."
+            } catch {
+                statusMessage = safeMessage(for: error)
+            }
+        }
     }
 
     private func receiveAgentProgress(
