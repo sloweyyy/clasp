@@ -49,8 +49,20 @@ enum ClaudeCodeCLI {
     /// Clasp launches as a GUI app with a minimal PATH, and npm-based installs
     /// resolve node through the environment, so spawned sessions get the
     /// executable's directory and the common tool directories prepended.
+    ///
+    /// When Clasp itself was launched from inside a Claude Code session (for
+    /// example via `open` from a development shell, which propagates the
+    /// caller's environment), inherited session markers would make spawned
+    /// sessions behave as nested children and disable transcript saving, so
+    /// they are stripped.
     static func environment(for executable: URL) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
+        for key in environment.keys where key == "CLAUDECODE"
+            || key == "CLAUDE_PID"
+            || key == "CLAUDE_EFFORT"
+            || key.hasPrefix("CLAUDE_CODE_") {
+            environment.removeValue(forKey: key)
+        }
         let basePath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         let existing = Set(basePath.split(separator: ":").map(String.init))
         let extra = [

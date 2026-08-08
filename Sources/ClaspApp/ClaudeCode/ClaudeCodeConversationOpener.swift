@@ -10,6 +10,7 @@ enum ClaudeCodeConversationOpener {
         let script = """
         #!/bin/zsh
         clear
+        unset -m 'CLAUDE*' 2>/dev/null
         cd \(quoted(reference.workspacePath)) || exit 1
         exec \(quoted(executable.path)) --resume \(quoted(reference.sessionID))
         """
